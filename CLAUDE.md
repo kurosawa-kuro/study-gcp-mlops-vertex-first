@@ -82,8 +82,8 @@
 |---|---|
 | `make doctor` | 前提ツール到達確認 (uv / terraform / gcloud / make / jq + VIRTUAL_ENV mismatch 警告) |
 | `make sync` | uv workspace + dev group 同期 |
-| `make check` | ruff + fmt-check + mypy + pytest (CI 同等、現行 183 tests) |
-| `make check-layers` | AST で Port/Adapter 境界違反を検出 (`scripts/checks/layers.py::RULES` 経由、29 ファイル) |
+| `make check` | ruff + fmt-check + mypy + pytest (CI 同等、現行 194 tests) |
+| `make check-layers` | AST で Port/Adapter 境界違反を検出 (`scripts/checks/layers.py::RULES` 経由、31 ファイル) |
 | `make sync-dataform-config` | `env/config/setting.yaml` → `definitions/workflow_settings.yaml` を生成 (gitignored、CI で自動再生成) |
 | `make train-smoke` / `make train-smoke-persist` | 合成データで LightGBM LambdaRank 学習 (GCP 認証不要) |
 | `make api-dev` | ローカル uvicorn (`ENABLE_SEARCH=false` 既定 / `/search` を動かす場合は env に ENABLE_SEARCH=true + BQ creds) |
@@ -129,7 +129,7 @@ CI path filters (`app/**` / `jobs/**` / `definitions/**` / `infra/**`) は top-l
 ## リポジトリ状態
 
 - Phase 1–10d の実装 + scripts/tests 再編 + setting.yaml 集約が完了。California Housing 関連コード / Dataform / Python / Terraform / Scheduled Query は 10b/10c で完全削除済
-- `make check` PASS (183 tests、`tests/{arch,parity,infra}/`)
+- `make check` 現行 194 tests (`tests/{arch,parity,infra}/` + workspace 別 `{app,jobs,common}/tests/`)。ただし `jobs/tests/test_rank_trainer.py` と `jobs/tests/test_rank_cli_run.py` の 4 件が FAIL 中 — `FEATURE_COLS_RANKER` に `semantic_rank` が入ったが trainer の fixture 側が追従していない (下記 残タスク 参照)
 - Port / pure-logic ファイルの境界は `scripts/checks/layers.py::RULES` が canonical。`tests/arch/test_import_boundaries.py` は薄い pytest ラッパで、`make check-layers` でも CLI 単独実行できる (`google.cloud.*` / `wandb` / 具象 adapter の直接 import を禁止)
 - feature parity invariant (5 ファイル) は自動検知:
   - `tests/parity/test_feature_parity_sql_ranker.py` — monitoring SQL の UNPIVOT ↔ `FEATURE_COLS_RANKER` (property-side 7 列)
@@ -139,7 +139,8 @@ CI path filters (`app/**` / `jobs/**` / `definitions/**` / `infra/**`) は top-l
 - 初回 apply 時に踏みやすい 4 つのハマりは `infra/modules/` 側で全て修正済 (`time_sleep` / DTS の `location` / DTS の `service_account_name` / Cloud Run image placeholder)。詳細表は `docs/04_運用.md §1 STEP 9`
 - `make tf-validate` PASS (offline)、`make tf-bootstrap` で Phase 0 半自動化済
 - **残タスク**:
-  - **`embedding-job` Cloud Run Job が Terraform 未定義** (drift) — `infra/modules/runtime/main.tf` に `google_cloud_run_v2_job.embedding_job` を追加する必要あり。`sa-job-embed` SA + IAM + Artifact Registry 側は揃っている。`deploy-embedding-job.yml` は NOT_FOUND を `|| true` で許容している暫定状態
+  - **trainer 側の `semantic_rank` 追従漏れ** — `FEATURE_COLS_RANKER` に `semantic_rank` が追加されたが `jobs/src/training/services/rank_trainer.py` の要求列チェックとテスト fixture がこれに追随していない。`jobs/tests/test_rank_trainer.py` / `jobs/tests/test_rank_cli_run.py` の 4 件が FAIL する。feature parity invariant を完結させるには trainer 側の fixture / splitter に `semantic_rank` 列を埋める必要あり
+  - **`deploy-embedding-job.yml` のヘッダーコメント更新漏れ** — `google_cloud_run_v2_job.embedding_job` は `infra/modules/runtime/main.tf:154` で既に定義済みだが、workflow ファイル冒頭のコメント (L12–16) が「Phase 9 lands するまで未定義」「`|| true` で NOT_FOUND 許容」と古いまま。apply 本体は既に修正済 (`|| true` は除去) で、コメントだけ差分
   - Doppler → Cloud Run 環境変数注入は **配線されていない** (Secret Manager 容器は作るが誰も読まない、`--set-secrets` 未使用)。STEP 10 を skip しても動く
   - Monitoring 通知先差し替え (`oncall@example.com` placeholder)
   - Looker Studio ダッシュボード (IaC 対象外)
